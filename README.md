@@ -51,3 +51,48 @@ homework runner.
 ## Homework 1 solution: 
 > to students: please fill your solution description here.
 
+
+### Chain design
+receipt image
+|
+v
+image_data_url()  (local file -> base64 data URL)
+|
+v
+ChatPromptTemplate  (system: extract JSON {subtotal, discounts[], rounding, final_paid};
+human: text + image_url)
+|
+v
+ChatDeepSeek  (model="deepseek-v4-flash-vision-exp", temperature=0, max_tokens=8192)
+|
+v
+JSON answer per receipt  ---- self-check: final_paid == subtotal + rounding ----
+|                                                                 |
+| pass (keep up to 5 samples, max 7 attempts)                     | fail -> retry
+v
+Aggregate per receipt:
+paid     = median of the samples' final_paid
+subtotal = median of the samples' subtotal
+discounts = line-by-line median vote over the discount lists
+(receipts print discount lines in a fixed order, so the i-th line
+is the same discount in every sample; one misread line is outvoted)
+|
+v
+Q1 = sum of paid per receipt              -> "HK$1974.30"
+Q2 = sum of (subtotal + discounts)        -> "HK$2348.20"
+
+### Description
+
+The chain sends each receipt image to the vision-capable DeepSeek Flash model
+once per sample and asks for a compact JSON object (subtotal, the list of
+discount line amounts, rounding, and final paid amount) instead of free-form
+text, so the two query answers can be computed with exact Decimal arithmetic
+rather than trusting the model's own math. Because a vision model occasionally
+misreads a digit or runs out of output budget on dense receipts, each receipt
+is sampled up to 5 times; every sample must pass a self-check
+(final_paid = subtotal + rounding) before it counts, and the per-receipt
+figures are then combined by median voting - over the paid amounts, the
+subtotals, and each discount line position separately - so a single bad
+reading is outvoted by the majority. The two final answers are the sums of
+these per-receipt medians, formatted as a single HK$ amount each.
+
